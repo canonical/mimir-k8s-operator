@@ -44,14 +44,8 @@ class MimirK8SOperatorCharm(CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
     def _on_mimir_pebble_ready(self, event):
-        version = self._mimir_version
-
-        if version is not None:
-            self.unit.set_workload_version(version)
-        else:
-            logger.debug("Cannot set workload version at this time: could not get Mimir version.")
-
-            self._configure(event)
+        self._set_mimir_version()
+        self._configure(event)
 
     def _on_config_changed(self, event):
         self._configure(event)
@@ -93,6 +87,16 @@ class MimirK8SOperatorCharm(CharmBase):
             logger.info("Mimir (re)started")
 
         self.unit.status = ActiveStatus()
+
+    def _set_mimir_version(self) -> bool:
+        version = self._mimir_version
+
+        if version is None:
+            logger.debug("Cannot set workload version at this time: could not get Mimir version.")
+            return False
+
+        self.unit.set_workload_version(version)
+        return True
 
     @property
     def _pebble_layer(self):
