@@ -91,7 +91,7 @@ class MimirK8SOperatorCharm(CharmBase):
             return
 
         try:
-            restart = (self._set_alerts(self._container),)
+            restart = self._set_alerts(self._container)
         except PebbleError as e:
             logger.error("Failed to push updated alert files: %s", e)
             self.unit.status = BlockedStatus("Failed to push updated alert files; see debug logs")
