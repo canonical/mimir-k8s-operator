@@ -17,6 +17,7 @@ import os
 from typing import Optional
 
 import yaml
+from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from deepdiff import DeepDiff
 from ops.charm import CharmBase
 from ops.main import main
@@ -40,6 +41,9 @@ class MimirK8SOperatorCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
         self._container = self.unit.get_container(self._name)
+
+        self.service_patch = KubernetesServicePatch(self, [(self.app.name, self._http_listen_port)])
+
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
@@ -63,7 +67,6 @@ class MimirK8SOperatorCharm(CharmBase):
         if "services" not in current_layer or DeepDiff(
             current_layer["services"], new_layer["services"], ignore_order=True
         ):
-            logger.debug("Mimir service will be restarted.")
             restart = True
 
         config = self._mimir_config
