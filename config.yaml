@@ -1,14 +1,17 @@
-# This file defines charm config options, and populates the Configure tab on Charmhub.
-# If your charm does not require configuration options, delete this file entirely.
-#
-# See https://juju.is/docs/config for guidance.
-
+# Copyright 2022 Canonical Ltd.
+# See LICENSE file for licensing details.
 options:
-  # An example config option to customise the log level of the workload
-  log-level:
+  cpu:
     description: |
-      Configures the log level of gunicorn. 
-
-      Acceptable values are: "info", "debug", "warning", "error" and "critical"
-    default: "info"
+      K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit). This value is used
+      for the "limits" portion of the resource requirements (the "requests" portion is
+      automatically deduced from it).
+      See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+    type: string
+  memory:
+    description: |
+      K8s memory resource limit, e.g. "1Gi". Default is unset (no limit). This value is used
+      for the "limits" portion of the resource requirements (the "requests" portion is
+      automatically deduced from it).
+      See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
     type: string

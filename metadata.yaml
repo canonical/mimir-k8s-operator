@@ -1,43 +1,28 @@
-# This file populates the Overview on Charmhub.
-# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
+# Copyright 2022 Canonical Ltd.
+# See LICENSE file for licensing details.
 
-# The charm package name, no spaces (required)
-# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
-name: mimir-k8s-operator
- 
-# The following metadata are human-readable and will be published prominently on Charmhub.
+name: mimir-k8s
+assumes:
+  - k8s-api
 
-# (Recommended)
-display-name: Charm Template
-
-# (Required)
-summary: A very short one-line summary of the charm.
+display-name: Mimir Charmed Operator
+summary: Mimir for Kubernetes clusters.
 
 description: |
-  A single sentence that says what the charm is, concisely and memorably.
+  Grafana Mimir is an open source software project that provides a scalable long-term storage for Prometheus.
+  This charm deploys and operates Mimir on Kubernetes clusters
 
-  A paragraph of one to three short sentences, that describe what the charm does.
+website: https://charmhub.io/mimir-k8s
+source: https://github.com/canonical/mimir-k8s-operator
+issues: https://github.com/canonical/mimir-k8s-operator/issues
+#docs: https://discourse.charmhub.io/t/mimir-k8s-docs-index/XXXX
 
-  A third paragraph that explains what need the charm meets.
-
-  Finally, a paragraph that describes whom the charm is useful for.
-
-# The containers and resources metadata apply to Kubernetes charms only.
-# Remove them if not required.
-
-# Your workload’s containers.
 containers:
-  httpbin:
-    resource: httpbin-image
+  mimir:
+    resource: mimir-image
 
-# This field populates the Resources tab on Charmhub.
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
-  httpbin-image:
+  mimir-image:
     type: oci-image
-    description: OCI image for httpbin
-    # The upstream-source field is ignored by Juju. It is included here as a reference
-    # so the integration testing suite knows which image to deploy during testing. This field
-    # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: kennethreitz/httpbin
+    description: OCI image for Grafana Mimir
+    upstream-source: docker.io/grafana/mimir:2.4.0

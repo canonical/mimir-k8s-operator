@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2022 jose
+# Copyright 2022 Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk
@@ -14,91 +14,134 @@ develop a new k8s charm using the Operator Framework:
 
 import logging
 
+import yaml
+from deepdiff import DeepDiff
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.pebble import PathError, ProtocolError
 
-# Log messages can be retrieved using juju debug-log
+MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
+
 logger = logging.getLogger(__name__)
-
-VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
 
 class MimirK8SOperatorCharm(CharmBase):
     """Charm the service."""
 
+    _name = "mimir"
+
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(self.on.httpbin_pebble_ready, self._on_httpbin_pebble_ready)
+        self._container = self.unit.get_container(self._name)
+        self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.breakpoint()
 
-    def _on_httpbin_pebble_ready(self, event):
-        """Define and start a workload using the Pebble API.
-
-        Change this example to suit your needs. You'll need to specify the right entrypoint and
-        environment configuration for your specific workload.
-
-        Learn more about interacting with Pebble at at https://juju.is/docs/sdk/pebble.
-        """
-        # Get a reference the container attribute on the PebbleReadyEvent
-        container = event.workload
-        # Add initial Pebble config layer using the Pebble API
-        container.add_layer("httpbin", self._pebble_layer, combine=True)
-        # Make Pebble reevaluate its plan, ensuring any services are started if enabled.
-        container.replan()
-        # Learn more about statuses in the SDK docs:
-        # https://juju.is/docs/sdk/constructs#heading--statuses
-        self.unit.status = ActiveStatus()
+    def _on_mimir_pebble_ready(self, event):
+        self._configure(event)
 
     def _on_config_changed(self, event):
-        """Handle changed configuration.
+        self._configure(event)
 
-        Change this example to suit your needs. If you don't need to handle config, you can remove
-        this method.
+    def _configure(self, event):
+        restart = False
 
-        Learn more about config at https://juju.is/docs/sdk/config
-        """
-        # Fetch the new config value
-        log_level = self.model.config["log-level"].lower()
+        if not self._container.can_connect():
+            self.unit.status = WaitingStatus("Waiting for Pebble ready")
+            return
 
-        # Do some validation of the configuration option
-        if log_level in VALID_LOG_LEVELS:
-            # The config is good, so update the configuration of the workload
-            container = self.unit.get_container("httpbin")
-            # Verify that we can connect to the Pebble API in the workload container
-            if container.can_connect():
-                # Push an updated layer with the new config
-                container.add_layer("httpbin", self._pebble_layer, combine=True)
-                container.replan()
+        current_layer = self._container.get_plan().to_dict()
+        new_layer = self._pebble_layer
 
-                logger.debug("Log level for gunicorn changed to '%s'", log_level)
-                self.unit.status = ActiveStatus()
-            else:
-                # We were unable to connect to the Pebble API, so we defer this event
-                event.defer()
-                self.unit.status = WaitingStatus("waiting for Pebble API")
-        else:
-            # In this case, the config option is bad, so block the charm and notify the operator.
-            self.unit.status = BlockedStatus("invalid log level: '{log_level}'")
+        if "services" not in current_layer or DeepDiff(
+            current_layer["services"], new_layer["services"], ignore_order=True
+        ):
+            logger.debug("Mimir service will be restarted.")
+            restart = True
+
+        config = self._mimir_config
+
+        try:
+            if self._current_mimir_config != config:
+                config_as_yaml = yaml.safe_dump(config)
+                self._container.push(MIMIR_CONFIG, config_as_yaml, make_dirs=True)
+                logger.info("Pushed new Mimir configuration")
+                restart = True
+        except (ProtocolError, PathError) as e:
+            self.unit.status = BlockedStatus(str(e))
+            return
+        except Exception as e:
+            self.unit.status = BlockedStatus(str(e))
+            return
+
+        if restart:
+            self._container.add_layer(self._name, new_layer, combine=True)
+            self._container.restart(self._name)
+            logger.info("Mimir (re)started")
+
+        self.unit.status = ActiveStatus()
 
     @property
     def _pebble_layer(self):
-        """Return a dictionary representing a Pebble layer."""
         return {
-            "summary": "httpbin layer",
-            "description": "pebble config layer for httpbin",
+            "summary": "mimir layer",
+            "description": "pebble config layer for mimir",
             "services": {
-                "httpbin": {
+                "mimir": {
                     "override": "replace",
-                    "summary": "httpbin",
-                    "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
+                    "summary": "mimir daemon",
+                    "command": f"/bin/mimir --config.file={MIMIR_CONFIG}",
                     "startup": "enabled",
-                    "environment": {
-                        "GUNICORN_CMD_ARGS": f"--log-level {self.model.config['log-level']}"
-                    },
                 }
             },
         }
+
+    @property
+    def _mimir_config(self) -> dict:
+        return {
+            "multitenancy_enabled": False,
+            "blocks_storage": {
+                "backend": "filesystem",
+                "bucket_store": {"sync_dir": "/tmp/mimir/tsdb-sync"},
+                "filesystem": {"dir": "/tmp/mimir/data/tsdb"},
+                "tsdb": {"dir": "/tmp/mimir/tsdb"},
+            },
+            "compactor": {
+                "data_dir": "/tmp/mimir/compactor",
+                "sharding_ring": {"kvstore": {"store": "memberlist"}},
+            },
+            "distributor": {
+                "ring": {"instance_addr": "127.0.0.1", "kvstore": {"store": "memberlist"}}
+            },
+            "ingester": {
+                "ring": {
+                    "instance_addr": "127.0.0.1",
+                    "kvstore": {"store": "memberlist"},
+                    "replication_factor": 1,
+                }
+            },
+            "ruler_storage": {"backend": "filesystem", "filesystem": {"dir": "/tmp/mimir/rules"}},
+            "server": {"http_listen_port": 9009, "log_level": "error"},
+            "store_gateway": {"sharding_ring": {"replication_factor": 1}},
+        }
+
+    @property
+    def _current_mimir_config(self) -> dict:
+        if not self._container.can_connect():
+            logger.debug("Could not connect to Mimir container")
+            return {}
+
+        try:
+            raw_current = self._container.pull(MIMIR_CONFIG).read()
+            return yaml.safe_load(raw_current)
+        except (ProtocolError, PathError) as e:
+            logger.warning(
+                "Could not check the current Mimir configuration due to "
+                "a failure in retrieving the file: %s",
+                e,
+            )
+            return {}
 
 
 if __name__ == "__main__":  # pragma: nocover
