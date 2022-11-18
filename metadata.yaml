@@ -34,3 +34,7 @@ resources:
     type: oci-image
     description: OCI image for Grafana Mimir
     upstream-source: docker.io/grafana/mimir:2.4.0
+
+provides:
+  receive-remote-write:
+    interface: prometheus_remote_write

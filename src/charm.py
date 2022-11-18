@@ -12,23 +12,39 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
+import hashlib
 import logging
 import os
+import socket
 from typing import Optional
 
 import yaml
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
+from charms.prometheus_k8s.v0.prometheus_remote_write import (
+    DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
+)
+from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from deepdiff import DeepDiff
 from ops.charm import CharmBase
+from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.pebble import Error as PebbleError
 from ops.pebble import PathError, ProtocolError
 from parse import search
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
+RULES_DIR = f"{os.path.join(MIMIR_DIR, 'rules')}"
 
 logger = logging.getLogger(__name__)
+
+
+def sha256(hashable) -> str:
+    """Use instead of the builtin hash() for repeatable values."""
+    if isinstance(hashable, str):
+        hashable = hashable.encode("utf-8")
+    return hashlib.sha256(hashable).hexdigest()
 
 
 class MimirK8SOperatorCharm(CharmBase):
@@ -37,12 +53,25 @@ class MimirK8SOperatorCharm(CharmBase):
     _name = "mimir"
     _http_listen_port = 9009
     _instance_addr = "127.0.0.1"
+    _stored = StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
+        self._stored.set_default(alerts_hash=None)
         self._container = self.unit.get_container(self._name)
 
-        self.service_patch = KubernetesServicePatch(self, [(self.app.name, self._http_listen_port)])
+        self.service_patch = KubernetesServicePatch(
+            self, [(self.app.name, self._http_listen_port)]
+        )
+
+        self.remote_write_provider = PrometheusRemoteWriteProvider(
+            charm=self,
+            relation_name=DEFAULT_REMOTE_WRITE_RELATION_NAME,
+            endpoint_address=self.hostname,
+            endpoint_port=self._http_listen_port,
+            endpoint_schema="http://",
+            endpoint_path="/api/v1/push",
+        )
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -59,6 +88,13 @@ class MimirK8SOperatorCharm(CharmBase):
 
         if not self._container.can_connect():
             self.unit.status = WaitingStatus("Waiting for Pebble ready")
+            return
+
+        try:
+            restart = (self._set_alerts(self._container),)
+        except PebbleError as e:
+            logger.error("Failed to push updated alert files: %s", e)
+            self.unit.status = BlockedStatus("Failed to push updated alert files; see debug logs")
             return
 
         current_layer = self._container.get_plan().to_dict()
@@ -89,6 +125,7 @@ class MimirK8SOperatorCharm(CharmBase):
             self._container.restart(self._name)
             logger.info("Mimir (re)started")
 
+        self.remote_write_provider.update_endpoint()
         self.unit.status = ActiveStatus()
 
     def _set_mimir_version(self) -> bool:
@@ -100,6 +137,48 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.unit.set_workload_version(version)
         return True
+
+    def _set_alerts(self, container) -> bool:
+        """Create alert rule files for all Mimir consumers.
+
+        Args:
+            container: the Mimir workload container into which
+                alert rule files need to be created. This container
+                must be in a pebble ready state.
+
+        Returns: A boolean indicating if new or different alert rules were pushed.
+        """
+        remote_write_alerts = self.remote_write_provider.alerts()
+        alerts_hash = sha256(str(remote_write_alerts))
+        alert_rules_changed = alerts_hash != self._stored.alerts_hash
+
+        # Pushing files every time for situations such as cluster restart:
+        # Relation data and stored state match, but files haven't been written yet.
+        container.remove_path(RULES_DIR, recursive=True)
+        self._push_alert_rules(container, self.remote_write_provider.alerts())
+        self._stored.alerts_hash = alerts_hash
+        return alert_rules_changed
+
+    def _push_alert_rules(self, container, alerts):
+        """Pushes alert rules from a rules file to the prometheus container.
+
+        Args:
+            container: the Mimir workload container into which
+                alert rule files need to be created. This container
+                must be in a pebble ready state.
+            alerts: a dictionary of alert rule files, fetched from
+                either a metrics consumer or a remote write provider.
+
+        """
+        container.make_dir(RULES_DIR)
+        for topology_identifier, rules_file in alerts.items():
+            filename = f"juju_{topology_identifier}.rules"
+            path = os.path.join(RULES_DIR, filename)
+
+            rules = yaml.safe_dump(rules_file)
+
+            container.push(path, rules, make_dirs=True)
+            logger.debug("Updated alert rules file %s", filename)
 
     @property
     def _pebble_layer(self):
@@ -152,7 +231,7 @@ class MimirK8SOperatorCharm(CharmBase):
             "ruler_storage": {
                 "backend": "filesystem",
                 "filesystem": {
-                    "dir": f"{os.path.join(MIMIR_DIR, 'rules')}",
+                    "dir": RULES_DIR,
                 },
             },
             "server": {
@@ -195,6 +274,11 @@ class MimirK8SOperatorCharm(CharmBase):
             return result
 
         return result[0]
+
+    @property
+    def hostname(self) -> str:
+        """Unit's hostname."""
+        return socket.getfqdn()
 
 
 if __name__ == "__main__":  # pragma: nocover
