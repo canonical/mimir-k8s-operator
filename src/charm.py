@@ -13,6 +13,7 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import logging
+import os
 
 import yaml
 from deepdiff import DeepDiff
@@ -22,6 +23,7 @@ from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import PathError, ProtocolError
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
+MIMIR_DIR = "/mimir"
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,8 @@ class MimirK8SOperatorCharm(CharmBase):
     """Charm the service."""
 
     _name = "mimir"
+    _http_listen_port = 9009
+    _instance_addr = "127.0.0.1"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -103,27 +107,46 @@ class MimirK8SOperatorCharm(CharmBase):
             "multitenancy_enabled": False,
             "blocks_storage": {
                 "backend": "filesystem",
-                "bucket_store": {"sync_dir": "/tmp/mimir/tsdb-sync"},
-                "filesystem": {"dir": "/tmp/mimir/data/tsdb"},
-                "tsdb": {"dir": "/tmp/mimir/tsdb"},
+                "bucket_store": {
+                    "sync_dir": f"{os.path.join(MIMIR_DIR, 'tsdb-sync')}",
+                },
+                "filesystem": {
+                    "dir": f"{os.path.join(MIMIR_DIR, 'data', 'tsdb')}",
+                },
+                "tsdb": {
+                    "dir": f"{os.path.join(MIMIR_DIR, 'tsdb')}",
+                },
             },
             "compactor": {
-                "data_dir": "/tmp/mimir/compactor",
+                "data_dir": f"{os.path.join(MIMIR_DIR, 'compactor')}",
                 "sharding_ring": {"kvstore": {"store": "memberlist"}},
             },
             "distributor": {
-                "ring": {"instance_addr": "127.0.0.1", "kvstore": {"store": "memberlist"}}
+                "ring": {
+                    "instance_addr": f"{self._instance_addr}",
+                    "kvstore": {"store": "memberlist"},
+                }
             },
             "ingester": {
                 "ring": {
-                    "instance_addr": "127.0.0.1",
+                    "instance_addr": f"{self._instance_addr}",
                     "kvstore": {"store": "memberlist"},
                     "replication_factor": 1,
                 }
             },
-            "ruler_storage": {"backend": "filesystem", "filesystem": {"dir": "/tmp/mimir/rules"}},
-            "server": {"http_listen_port": 9009, "log_level": "error"},
-            "store_gateway": {"sharding_ring": {"replication_factor": 1}},
+            "ruler_storage": {
+                "backend": "filesystem",
+                "filesystem": {
+                    "dir": f"{os.path.join(MIMIR_DIR, 'rules')}",
+                },
+            },
+            "server": {
+                "http_listen_port": self._http_listen_port,
+                "log_level": "error",
+            },
+            "store_gateway": {
+                "sharding_ring": {"replication_factor": 1},
+            },
         }
 
     @property

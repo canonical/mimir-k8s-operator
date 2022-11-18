@@ -20,6 +20,14 @@ issues: https://github.com/canonical/mimir-k8s-operator/issues
 containers:
   mimir:
     resource: mimir-image
+    mounts:
+      - storage: mimir-store
+        location: /mimir
+
+storage:
+  mimir-store:
+    type: filesystem
+    description: Mount point in which Mimir will store data
 
 resources:
   mimir-image:
