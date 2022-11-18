@@ -14,6 +14,7 @@ develop a new k8s charm using the Operator Framework:
 
 import logging
 import os
+from typing import Optional
 
 import yaml
 from deepdiff import DeepDiff
@@ -21,6 +22,7 @@ from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import PathError, ProtocolError
+from parse import search
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
@@ -40,10 +42,16 @@ class MimirK8SOperatorCharm(CharmBase):
         self._container = self.unit.get_container(self._name)
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.breakpoint()
 
     def _on_mimir_pebble_ready(self, event):
-        self._configure(event)
+        version = self._mimir_version
+
+        if version is not None:
+            self.unit.set_workload_version(version)
+        else:
+            logger.debug("Cannot set workload version at this time: could not get Mimir version.")
+
+            self._configure(event)
 
     def _on_config_changed(self, event):
         self._configure(event)
@@ -165,6 +173,21 @@ class MimirK8SOperatorCharm(CharmBase):
                 e,
             )
             return {}
+
+    @property
+    def _mimir_version(self) -> Optional[str]:
+        if not self._container.can_connect():
+            return None
+
+        version_output, _ = self._container.exec(["/bin/mimir", "-version"]).wait_output()
+        # Output looks like this:
+        # Mimir, version 2.4.0 (branch: HEAD, revision: 32137ee)
+        result = search("Mimir, version {} ", version_output)
+
+        if result is None:
+            return result
+
+        return result[0]
 
 
 if __name__ == "__main__":  # pragma: nocover
