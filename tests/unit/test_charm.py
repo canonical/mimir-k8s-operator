@@ -14,14 +14,13 @@ from ops.testing import Harness
 
 from charm import MimirK8SOperatorCharm
 
+ops.testing.SIMULATE_CAN_CONNECT = True
+
 
 class TestCharm(unittest.TestCase):
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @patch("lightkube.core.client.GenericSyncClient")
     def setUp(self, *_):
-        ops.testing.SIMULATE_CAN_CONNECT = True
-
-        self.addCleanup(setattr, ops.testing, "SIMULATE_CAN_CONNECT", False)
         self.container_name: str = "mimir"
         self.harness = Harness(MimirK8SOperatorCharm)
         self.addCleanup(self.harness.cleanup)
@@ -66,10 +65,10 @@ class TestCharm(unittest.TestCase):
         )
 
     @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
-    def test_mimir_pebble_ready_cannot_connect(self, mock_version):
+    def test_config_changed_cannot_connect(self, mock_version):
         mock_version.return_value = "2.4.0"
         ops.testing.SIMULATE_CAN_CONNECT = False
-        self.harness.container_pebble_ready("mimir")
+        self.harness.update_config({"cpu": "256"})
         self.assertEqual(self.harness.model.unit.status, WaitingStatus("Waiting for Pebble ready"))
 
     @patch.object(Container, "push")
