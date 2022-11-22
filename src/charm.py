@@ -24,14 +24,14 @@ from charms.prometheus_k8s.v0.prometheus_remote_write import (
     DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
 )
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
-from deepdiff import DeepDiff
+from deepdiff import DeepDiff  # type: ignore
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
 from ops.pebble import PathError, ProtocolError
-from parse import search
+from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
