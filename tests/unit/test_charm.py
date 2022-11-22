@@ -30,11 +30,12 @@ class TestCharm(unittest.TestCase):
     @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
     @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
-    def test_mimir_pebble_ready(self, mock_version, mock_set_alerts, mock_current_mimir_config):
+    def test_pebble_ready_and_config_ok(
+        self, mock_version, mock_set_alerts, mock_current_mimir_config
+    ):
         mock_version.return_value = "2.4.0"
         mock_set_alerts.return_value = True
         mock_current_mimir_config.return_value = {}
-        # Expected plan after Pebble ready with default config
         expected_plan = {
             "services": {
                 "mimir": {
@@ -46,16 +47,11 @@ class TestCharm(unittest.TestCase):
             },
         }
 
-        # Simulate the container coming up and emission of pebble-ready event
         self.harness.container_pebble_ready("mimir")
-        # Get the plan now we've run PebbleReady
         updated_plan = self.harness.get_container_pebble_plan("mimir").to_dict()
-        # Check we've got the plan we expected
         self.assertEqual(expected_plan, updated_plan)
-        # Check the service was started
         service = self.harness.model.unit.get_container("mimir").get_service("mimir")
         self.assertTrue(service.is_running())
-        # Ensure we set an ActiveStatus with no message
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
 
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
@@ -63,9 +59,7 @@ class TestCharm(unittest.TestCase):
     def test_set_alerts_error(self, mock_version, mock_set_alerts):
         mock_version.return_value = "2.4.0"
         mock_set_alerts.side_effect = PebbleError
-        # Simulate the container coming up and emission of pebble-ready event
         self.harness.container_pebble_ready("mimir")
-        # Ensure we set a BlockedStatus with no message
         self.assertEqual(
             self.harness.model.unit.status,
             BlockedStatus("Failed to push updated alert files; see debug logs"),
@@ -75,10 +69,8 @@ class TestCharm(unittest.TestCase):
     def test_mimir_pebble_ready_cannot_connect(self, mock_version):
         mock_version.return_value = "2.4.0"
         ops.testing.SIMULATE_CAN_CONNECT = False
-        # Simulate the container coming up and emission of pebble-ready event
         self.harness.container_pebble_ready("mimir")
-        # Check the charm is in WaitingStatus
-        self.assertIsInstance(self.harness.model.unit.status, WaitingStatus)
+        self.assertEqual(self.harness.model.unit.status, WaitingStatus("Waiting for Pebble ready"))
 
     @patch.object(Container, "push")
     @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
@@ -92,7 +84,6 @@ class TestCharm(unittest.TestCase):
         mock_current_mimir_config.return_value = {}
         mock_push.side_effect = PathError("kind", "error")
 
-        # Simulate the container coming up and emission of pebble-ready event
         self.harness.container_pebble_ready("mimir")
         self.assertIsInstance(self.harness.model.unit.status, BlockedStatus)
 
