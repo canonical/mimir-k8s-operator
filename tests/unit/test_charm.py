@@ -23,16 +23,15 @@ class TestCharm(unittest.TestCase):
     def setUp(self, *_):
         self.container_name: str = "mimir"
         self.harness = Harness(MimirK8SOperatorCharm)
-        self.addCleanup(self.harness.cleanup)
+        patcher = patch.object(MimirK8SOperatorCharm, "_mimir_version", new_callable=PropertyMock)
+        self.mock_version = patcher.start()
+        self.mock_version.return_value = "2.4.0"
+        self.addCleanup(patcher.stop)
         self.harness.begin()
 
     @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
-    @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
-    def test_pebble_ready_and_config_ok(
-        self, mock_version, mock_set_alerts, mock_current_mimir_config
-    ):
-        mock_version.return_value = "2.4.0"
+    def test_pebble_ready_and_config_ok(self, mock_set_alerts, mock_current_mimir_config):
         mock_set_alerts.return_value = True
         mock_current_mimir_config.return_value = {}
         expected_plan = {
@@ -54,9 +53,7 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
 
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
-    @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
-    def test_set_alerts_error(self, mock_version, mock_set_alerts):
-        mock_version.return_value = "2.4.0"
+    def test_set_alerts_error(self, mock_set_alerts):
         mock_set_alerts.side_effect = PebbleError
         self.harness.container_pebble_ready("mimir")
         self.assertEqual(
@@ -64,9 +61,7 @@ class TestCharm(unittest.TestCase):
             BlockedStatus("Failed to push updated alert files; see debug logs"),
         )
 
-    @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
-    def test_config_changed_cannot_connect(self, mock_version):
-        mock_version.return_value = "2.4.0"
+    def test_config_changed_cannot_connect(self):
         ops.testing.SIMULATE_CAN_CONNECT = False
         self.harness.update_config({"cpu": "256"})
         self.assertEqual(self.harness.model.unit.status, WaitingStatus("Waiting for Pebble ready"))
@@ -74,11 +69,9 @@ class TestCharm(unittest.TestCase):
     @patch.object(Container, "push")
     @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
-    @patch("charm.MimirK8SOperatorCharm._mimir_version", new_callable=PropertyMock)
     def test_mimir_pebble_ready_cannot_push_config(
-        self, mock_version, mock_set_alerts, mock_current_mimir_config, mock_push
+        self, mock_set_alerts, mock_current_mimir_config, mock_push
     ):
-        mock_version.return_value = "2.4.0"
         mock_set_alerts.return_value = True
         mock_current_mimir_config.return_value = {}
         mock_push.side_effect = PathError("kind", "error")
