@@ -21,6 +21,12 @@ def setup():
     KubernetesServicePatch.__init__ = Mock(return_value=None)
 
 
+def generate_scenario():
+    return Scenario.from_events(
+        ("install", "config-changed", "start", Event("mimir-pebble-ready", workload=Mock()))
+    )(MimirK8SOperatorCharm).play_until_complete()
+
+
 def test_deploy_ok_scenario(setup):
     expected_plan = {
         "services": {
@@ -32,11 +38,7 @@ def test_deploy_ok_scenario(setup):
             }
         },
     }
-
-    cc = Scenario.from_events(
-        ("install", "config-changed", "start", Event("mimir-pebble-ready", workload=Mock()))
-    )(MimirK8SOperatorCharm).play_until_complete()
-
+    cc = generate_scenario()
     assert cc[2].harness.get_container_pebble_plan("mimir").to_dict() == expected_plan
     assert (
         cc[2].harness.model.unit.get_container("mimir").get_service("mimir").is_running() is True
@@ -46,11 +48,7 @@ def test_deploy_ok_scenario(setup):
 
 def test_deploy_and_set_alerts_error_scenario(setup):
     MimirK8SOperatorCharm._set_alerts = Mock(side_effect=PebbleError)
-
-    cc = Scenario.from_events(
-        ("install", "config-changed", "start", Event("mimir-pebble-ready", workload=Mock()))
-    )(MimirK8SOperatorCharm).play_until_complete()
-
+    cc = generate_scenario()
     assert cc[2].harness.charm.unit.status == BlockedStatus(
         "Failed to push updated alert files; see debug logs"
     )
@@ -58,9 +56,5 @@ def test_deploy_and_set_alerts_error_scenario(setup):
 
 def test_deploy_and_cannot_push_scenario(setup):
     Container.push = Mock(side_effect=PathError("kind", "error"))
-
-    cc = Scenario.from_events(
-        ("install", "config-changed", "start", Event("mimir-pebble-ready", workload=Mock()))
-    )(MimirK8SOperatorCharm).play_until_complete()
-
+    cc = generate_scenario()
     assert cc[2].harness.charm.unit.status.name == "blocked"
