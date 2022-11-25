@@ -25,7 +25,7 @@ def setup():
 def generate_scenario():
     return Scenario.from_events(
         ("install", "config-changed", "start", Event("mimir-pebble-ready", workload=Mock()))
-    )(MimirK8SOperatorCharm).play_until_complete()
+    )(MimirK8SOperatorCharm)
 
 
 def test_deploy_ok_scenario():
@@ -39,7 +39,7 @@ def test_deploy_ok_scenario():
             }
         },
     }
-    cc = generate_scenario()
+    cc = generate_scenario().play_until_complete()
     assert cc[2].harness.get_container_pebble_plan("mimir").to_dict() == expected_plan
     assert (
         cc[2].harness.model.unit.get_container("mimir").get_service("mimir").is_running() is True
@@ -49,13 +49,13 @@ def test_deploy_ok_scenario():
 
 def test_config_changed_cannot_connect():
     Container.can_connect = Mock(return_value=False)
-    cc = generate_scenario()
+    cc = generate_scenario().play_until_complete()
     assert cc[2].harness.model.unit.status == WaitingStatus("Waiting for Pebble ready")
 
 
 def test_deploy_and_set_alerts_error_scenario():
     MimirK8SOperatorCharm._set_alerts = Mock(side_effect=PebbleError)
-    cc = generate_scenario()
+    cc = generate_scenario().play_until_complete()
     assert cc[2].harness.charm.unit.status == BlockedStatus(
         "Failed to push updated alert files; see debug logs"
     )
@@ -63,5 +63,5 @@ def test_deploy_and_set_alerts_error_scenario():
 
 def test_deploy_and_cannot_push_scenario():
     Container.push = Mock(side_effect=PathError("kind", "error"))
-    cc = generate_scenario()
+    cc = generate_scenario().play_until_complete()
     assert cc[2].harness.charm.unit.status.name == "blocked"
