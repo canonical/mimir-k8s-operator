@@ -3,6 +3,7 @@
 
 from unittest.mock import Mock, PropertyMock
 
+import pytest
 from charms.harness_extensions.v0.evt_sequences import Event, Scenario
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from ops.model import BlockedStatus, Container, WaitingStatus
@@ -12,7 +13,8 @@ from ops.pebble import PathError
 from charm import MimirK8SOperatorCharm
 
 
-def setup_function():
+@pytest.fixture(autouse=True)
+def setup():
     Container.can_connect = Mock(return_value=True)
     MimirK8SOperatorCharm._mimir_version = PropertyMock(return_value="2.4.0")
     MimirK8SOperatorCharm._current_mimir_config = PropertyMock(return_value={})
