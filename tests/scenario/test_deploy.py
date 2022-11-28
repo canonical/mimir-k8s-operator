@@ -7,10 +7,9 @@ import pytest
 from charms.harness_extensions.v0.evt_sequences import Event, Scenario
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from ops.model import BlockedStatus, Container, WaitingStatus
-from ops.pebble import Error as PebbleError
 from ops.pebble import PathError
 
-from charm import MimirK8SOperatorCharm
+from charm import BlockedStatusError, MimirK8SOperatorCharm
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +53,9 @@ def test_config_changed_cannot_connect():
 
 
 def test_deploy_and_set_alerts_error_scenario():
-    MimirK8SOperatorCharm._set_alerts = Mock(side_effect=PebbleError)
+    MimirK8SOperatorCharm._set_alerts = Mock(
+        side_effect=BlockedStatusError("Failed to push updated alert files; see debug logs")
+    )
     cc = generate_scenario().play_until_complete()
     assert cc[2].harness.charm.unit.status == BlockedStatus(
         "Failed to push updated alert files; see debug logs"
