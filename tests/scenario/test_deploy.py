@@ -7,7 +7,7 @@ import pytest
 from charms.harness_extensions.v0.evt_sequences import Event, Scenario
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from ops.model import BlockedStatus, Container, WaitingStatus
-from ops.pebble import PathError
+from ops.pebble import ProtocolError
 
 from charm import BlockedStatusError, MimirK8SOperatorCharm
 
@@ -63,6 +63,6 @@ def test_deploy_and_set_alerts_error_scenario():
 
 
 def test_deploy_and_cannot_push_scenario():
-    Container.push = Mock(side_effect=PathError("kind", "error"))
+    Container.push = Mock(side_effect=ProtocolError("Message"))
     cc = generate_scenario().play_until_complete()
     assert cc[2].harness.charm.unit.status.name == "blocked"

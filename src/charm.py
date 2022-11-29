@@ -48,7 +48,6 @@ class MimirK8SOperatorCharm(CharmBase):
     _http_listen_port = 9009
     _instance_addr = "127.0.0.1"
     _stored = StoredState()
-    _restart = False
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -84,14 +83,18 @@ class MimirK8SOperatorCharm(CharmBase):
             return
 
         try:
-            self._set_alerts()
-            self._set_mimir_config()
-            self._set_pebble_layer()
+            restart = any(
+                [
+                    self._set_alerts(),
+                    self._set_mimir_config(),
+                    self._set_pebble_layer(),
+                ]
+            )
         except BlockedStatusError as e:
             self.unit.status = BlockedStatus(e.message)
             return
 
-        if self._restart:
+        if restart:
             self._container.restart(self._name)
             logger.info("Mimir (re)started")
 
@@ -108,7 +111,11 @@ class MimirK8SOperatorCharm(CharmBase):
         self.unit.set_workload_version(version)
         return True
 
-    def _set_pebble_layer(self):
+    def _set_pebble_layer(self) -> bool:
+        """Set Pebble layer.
+
+        Returns: True if Pebble layer was added, otherwise False.
+        """
         current_layer = self._container.get_plan().to_dict()
         new_layer = self._pebble_layer
 
@@ -116,9 +123,17 @@ class MimirK8SOperatorCharm(CharmBase):
             current_layer["services"], new_layer["services"], ignore_order=True
         ):
             self._container.add_layer(self._name, new_layer, combine=True)
-            self._restart = True
+            return True
 
-    def _set_mimir_config(self):
+        return False
+
+    def _set_mimir_config(self) -> bool:
+        """Set Mimir config.
+
+        Returns: True if config have changed, otherwise False.
+        Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
+            are raised by container.remove_path
+        """
         config = self._mimir_config
 
         try:
@@ -126,17 +141,17 @@ class MimirK8SOperatorCharm(CharmBase):
                 config_as_yaml = yaml.safe_dump(config)
                 self._container.push(MIMIR_CONFIG, config_as_yaml, make_dirs=True)
                 logger.info("Pushed new Mimir configuration")
-                self._restart = True
-        except (ProtocolError, PathError) as e:
-            logger.error("Failed to push updated config file: %s", e)
-            raise BlockedStatusError(str(e))
-        except Exception as e:
+                return True
+
+            return False
+        except (ProtocolError, Exception) as e:
             logger.error("Failed to push updated config file: %s", e)
             raise BlockedStatusError(str(e))
 
-    def _set_alerts(self):
+    def _set_alerts(self) -> bool:
         """Create alert rule files for all Mimir consumers.
 
+        Returns: True if alerts rules have changed, otherwise False.
         Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
             are raised by container.remove_path
         """
@@ -160,7 +175,7 @@ class MimirK8SOperatorCharm(CharmBase):
             raise BlockedStatusError("Failed to push updated alert files; see debug logs")
 
         self._stored.alerts_hash = alerts_hash
-        self._restart = alert_rules_changed
+        return alert_rules_changed
 
     def _push_alert_rules(self, alerts):
         """Push alert rules from a rules file to the mimir container.

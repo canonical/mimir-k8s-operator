@@ -8,7 +8,7 @@ from unittest.mock import Mock, PropertyMock, patch
 
 import ops.testing
 from ops.model import ActiveStatus, BlockedStatus, Container, WaitingStatus
-from ops.pebble import PathError
+from ops.pebble import ProtocolError
 from ops.testing import Harness
 
 from charm import BlockedStatusError, MimirK8SOperatorCharm
@@ -75,7 +75,7 @@ class TestCharm(unittest.TestCase):
     ):
         mock_set_alerts.return_value = True
         mock_current_mimir_config.return_value = {}
-        mock_push.side_effect = PathError("kind", "error")
+        mock_push.side_effect = ProtocolError("Message")
 
         self.harness.container_pebble_ready("mimir")
         self.assertIsInstance(self.harness.model.unit.status, BlockedStatus)
