@@ -8,11 +8,10 @@ from unittest.mock import Mock, PropertyMock, patch
 
 import ops.testing
 from ops.model import ActiveStatus, BlockedStatus, Container, WaitingStatus
-from ops.pebble import Error as PebbleError
-from ops.pebble import PathError
+from ops.pebble import ProtocolError
 from ops.testing import Harness
 
-from charm import MimirK8SOperatorCharm
+from charm import BlockedStatusError, MimirK8SOperatorCharm
 
 ops.testing.SIMULATE_CAN_CONNECT = True
 
@@ -54,11 +53,13 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
     def test_set_alerts_error(self, mock_set_alerts):
-        mock_set_alerts.side_effect = PebbleError
+        mock_set_alerts.side_effect = BlockedStatusError(
+            "Failed to remove alerts directory; see debug logs"
+        )
         self.harness.container_pebble_ready("mimir")
         self.assertEqual(
             self.harness.model.unit.status,
-            BlockedStatus("Failed to push updated alert files; see debug logs"),
+            BlockedStatus("Failed to remove alerts directory; see debug logs"),
         )
 
     def test_config_changed_cannot_connect(self):
@@ -74,7 +75,7 @@ class TestCharm(unittest.TestCase):
     ):
         mock_set_alerts.return_value = True
         mock_current_mimir_config.return_value = {}
-        mock_push.side_effect = PathError("kind", "error")
+        mock_push.side_effect = ProtocolError("Message")
 
         self.harness.container_pebble_ready("mimir")
         self.assertIsInstance(self.harness.model.unit.status, BlockedStatus)

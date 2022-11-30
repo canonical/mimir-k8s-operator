@@ -4,13 +4,7 @@
 #
 # Learn more at: https://juju.is/docs/sdk
 
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-    https://discourse.charmhub.io/t/4208
-"""
+"""A Juju Charmed Operator for Mimir."""
 
 import hashlib
 import logging
@@ -48,7 +42,7 @@ def sha256(hashable) -> str:
 
 
 class MimirK8SOperatorCharm(CharmBase):
-    """Charm the service."""
+    """A Juju Charmed Operator for Mimir."""
 
     _name = "mimir"
     _http_listen_port = 9009
@@ -84,44 +78,23 @@ class MimirK8SOperatorCharm(CharmBase):
         self._configure(event)
 
     def _configure(self, event):
-        restart = False
-
         if not self._container.can_connect():
             self.unit.status = WaitingStatus("Waiting for Pebble ready")
             return
 
         try:
-            restart = self._set_alerts(self._container)
-        except PebbleError as e:
-            logger.error("Failed to push updated alert files: %s", e)
-            self.unit.status = BlockedStatus("Failed to push updated alert files; see debug logs")
-            return
-
-        current_layer = self._container.get_plan().to_dict()
-        new_layer = self._pebble_layer
-
-        if "services" not in current_layer or DeepDiff(
-            current_layer["services"], new_layer["services"], ignore_order=True
-        ):
-            restart = True
-
-        config = self._mimir_config
-
-        try:
-            if self._current_mimir_config != config:
-                config_as_yaml = yaml.safe_dump(config)
-                self._container.push(MIMIR_CONFIG, config_as_yaml, make_dirs=True)
-                logger.info("Pushed new Mimir configuration")
-                restart = True
-        except (ProtocolError, PathError) as e:
-            self.unit.status = BlockedStatus(str(e))
-            return
-        except Exception as e:
-            self.unit.status = BlockedStatus(str(e))
+            restart = any(
+                [
+                    self._set_alerts(),
+                    self._set_mimir_config(),
+                    self._set_pebble_layer(),
+                ]
+            )
+        except BlockedStatusError as e:
+            self.unit.status = BlockedStatus(e.message)
             return
 
         if restart:
-            self._container.add_layer(self._name, new_layer, combine=True)
             self._container.restart(self._name)
             logger.info("Mimir (re)started")
 
@@ -138,15 +111,49 @@ class MimirK8SOperatorCharm(CharmBase):
         self.unit.set_workload_version(version)
         return True
 
-    def _set_alerts(self, container) -> bool:
+    def _set_pebble_layer(self) -> bool:
+        """Set Pebble layer.
+
+        Returns: True if Pebble layer was added, otherwise False.
+        """
+        current_layer = self._container.get_plan().to_dict()
+        new_layer = self._pebble_layer
+
+        if "services" not in current_layer or DeepDiff(
+            current_layer["services"], new_layer["services"], ignore_order=True
+        ):
+            self._container.add_layer(self._name, new_layer, combine=True)
+            return True
+
+        return False
+
+    def _set_mimir_config(self) -> bool:
+        """Set Mimir config.
+
+        Returns: True if config have changed, otherwise False.
+        Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
+            are raised by container.remove_path
+        """
+        config = self._mimir_config
+
+        try:
+            if self._current_mimir_config != config:
+                config_as_yaml = yaml.safe_dump(config)
+                self._container.push(MIMIR_CONFIG, config_as_yaml, make_dirs=True)
+                logger.info("Pushed new Mimir configuration")
+                return True
+
+            return False
+        except (ProtocolError, Exception) as e:
+            logger.error("Failed to push updated config file: %s", e)
+            raise BlockedStatusError(str(e))
+
+    def _set_alerts(self) -> bool:
         """Create alert rule files for all Mimir consumers.
 
-        Args:
-            container: the Mimir workload container into which
-                alert rule files need to be created. This container
-                must be in a pebble ready state.
-
-        Returns: A boolean indicating if new or different alert rules were pushed.
+        Returns: True if alerts rules have changed, otherwise False.
+        Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
+            are raised by container.remove_path
         """
         remote_write_alerts = self.remote_write_provider.alerts()
         alerts_hash = sha256(str(remote_write_alerts))
@@ -154,30 +161,34 @@ class MimirK8SOperatorCharm(CharmBase):
 
         # Pushing files every time for situations such as cluster restart:
         # Relation data and stored state match, but files haven't been written yet.
-        container.remove_path(RULES_DIR, recursive=True)
-        self._push_alert_rules(container, self.remote_write_provider.alerts())
+
+        try:
+            self._container.remove_path(RULES_DIR, recursive=True)
+        except PebbleError as e:
+            logger.error("Failed to remove alerts directory: %s", e)
+            raise BlockedStatusError("Failed to remove alerts directory; see debug logs")
+
+        try:
+            self._push_alert_rules(self.remote_write_provider.alerts())
+        except (ProtocolError, PathError) as e:
+            logger.error("Failed to push updated alert files: %s", e)
+            raise BlockedStatusError("Failed to push updated alert files; see debug logs")
+
         self._stored.alerts_hash = alerts_hash
         return alert_rules_changed
 
-    def _push_alert_rules(self, container, alerts):
-        """Pushes alert rules from a rules file to the prometheus container.
+    def _push_alert_rules(self, alerts):
+        """Push alert rules from a rules file to the mimir container.
 
         Args:
-            container: the Mimir workload container into which
-                alert rule files need to be created. This container
-                must be in a pebble ready state.
-            alerts: a dictionary of alert rule files, fetched from
-                either a metrics consumer or a remote write provider.
-
+            alerts: a dictionary of alert rule files.
         """
-        container.make_dir(RULES_DIR)
+        self._container.make_dir(RULES_DIR)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
             path = os.path.join(RULES_DIR, filename)
-
             rules = yaml.safe_dump(rules_file)
-
-            container.push(path, rules, make_dirs=True)
+            self._container.push(path, rules, make_dirs=True)
             logger.debug("Updated alert rules file %s", filename)
 
     @property
@@ -279,6 +290,14 @@ class MimirK8SOperatorCharm(CharmBase):
     def hostname(self) -> str:
         """Unit's hostname."""
         return socket.getfqdn()
+
+
+class BlockedStatusError(Exception):
+    """Raised if there is an error that should set BlockedStatus."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
 
 
 if __name__ == "__main__":  # pragma: nocover
