@@ -64,6 +64,7 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.metrics_provider = MetricsEndpointProvider(
             self,
+            jobs=[{"static_configs": [{"targets": ["*:9009"]}]}],
             refresh_event=[
                 self.on.update_status,
             ],
