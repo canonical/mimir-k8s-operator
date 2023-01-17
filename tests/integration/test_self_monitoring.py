@@ -9,6 +9,8 @@ import pytest
 import requests
 from helpers import get_unit_address, mimir_endpoint_request, oci_image
 
+from pytest_operator.plugin import OpsTest
+
 logger = logging.getLogger(__name__)
 
 MIMIR = "mimir"
@@ -16,8 +18,11 @@ PROMETHEUS = "prometheus"
 
 
 @pytest.mark.abort_on_fail
-async def test_deploy_and_relate_charms(ops_test, mimir_charm):
+async def test_deploy_and_relate_charms(ops_test: OpsTest):
     """Test that Mimir can be related with Prometheus over prometheus_scrape."""
+    # Build charm from local source folder
+    mimir_charm = await ops_test.build_charm(".")
+
     await asyncio.gather(
         ops_test.model.deploy(
             mimir_charm,
