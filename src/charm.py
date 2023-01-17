@@ -22,13 +22,12 @@ from charms.prometheus_k8s.v0.prometheus_remote_write import (
 )
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
-from deepdiff import DeepDiff  # type: ignore
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
-from ops.pebble import PathError, ProtocolError
+from ops.pebble import Layer, PathError, ProtocolError
 from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
@@ -128,11 +127,12 @@ class MimirK8SOperatorCharm(CharmBase):
 
         Returns: True if Pebble layer was added, otherwise False.
         """
-        current_layer = self._container.get_plan().to_dict()
+        current_layer = self._container.get_plan()
         new_layer = self._pebble_layer
 
-        if "services" not in current_layer or DeepDiff(
-            current_layer["services"], new_layer["services"], ignore_order=True
+        if (
+            "services" not in current_layer.to_dict()
+            or current_layer.services != new_layer.services
         ):
             self._container.add_layer(self._name, new_layer, combine=True)
             return True
@@ -205,18 +205,20 @@ class MimirK8SOperatorCharm(CharmBase):
 
     @property
     def _pebble_layer(self):
-        return {
-            "summary": "mimir layer",
-            "description": "pebble config layer for mimir",
-            "services": {
-                "mimir": {
-                    "override": "replace",
-                    "summary": "mimir daemon",
-                    "command": f"/bin/mimir --config.file={MIMIR_CONFIG}",
-                    "startup": "enabled",
-                }
-            },
-        }
+        return Layer(
+            {
+                "summary": "mimir layer",
+                "description": "pebble config layer for mimir",
+                "services": {
+                    "mimir": {
+                        "override": "replace",
+                        "summary": "mimir daemon",
+                        "command": f"/bin/mimir --config.file={MIMIR_CONFIG}",
+                        "startup": "enabled",
+                    }
+                },
+            }
+        )
 
     @property
     def _mimir_config(self) -> dict:

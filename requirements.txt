@@ -1,5 +1,4 @@
 ops
-deepdiff == 6.2.2
 lightkube >= 0.11
 lightkube-models >= 1.22.0.4
 parse
