@@ -21,6 +21,7 @@ from charms.prometheus_k8s.v0.prometheus_remote_write import (
     DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
 )
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from deepdiff import DeepDiff  # type: ignore
 from ops.charm import CharmBase
 from ops.framework import StoredState
@@ -59,6 +60,13 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.service_patch = KubernetesServicePatch(
             self, [ServicePort(self._http_listen_port, name=self.app.name)]
+        )
+
+        self.metrics_provider = MetricsEndpointProvider(
+            self,
+            refresh_event=[
+                self.on.update_status,
+            ],
         )
 
         self.remote_write_provider = PrometheusRemoteWriteProvider(
