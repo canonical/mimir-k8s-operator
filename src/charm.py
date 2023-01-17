@@ -13,7 +13,10 @@ import socket
 from typing import Optional
 
 import yaml
-from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
+from charms.observability_libs.v1.kubernetes_service_patch import (
+    KubernetesServicePatch,
+    ServicePort,
+)
 from charms.prometheus_k8s.v0.prometheus_remote_write import (
     DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
 )
@@ -55,7 +58,7 @@ class MimirK8SOperatorCharm(CharmBase):
         self._container = self.unit.get_container(self._name)
 
         self.service_patch = KubernetesServicePatch(
-            self, [(self.app.name, self._http_listen_port)]
+            self, [ServicePort(self._http_listen_port, name=self.app.name)]
         )
 
         self.remote_write_provider = PrometheusRemoteWriteProvider(
