@@ -8,7 +8,6 @@ import logging
 import pytest
 import requests
 from helpers import get_unit_address, mimir_endpoint_request, oci_image
-
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
