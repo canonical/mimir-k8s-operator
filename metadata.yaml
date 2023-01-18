@@ -38,3 +38,5 @@ resources:
 provides:
   receive-remote-write:
     interface: prometheus_remote_write
+  grafana-source:
+    interface: grafana_datasource

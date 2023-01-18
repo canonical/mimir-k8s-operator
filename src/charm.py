@@ -13,6 +13,7 @@ import socket
 from typing import Optional
 
 import yaml
+from charms.grafana_k8s.v0.grafana_source import GrafanaSourceProvider
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_remote_write import (
     DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
@@ -65,6 +66,12 @@ class MimirK8SOperatorCharm(CharmBase):
             endpoint_port=self._http_listen_port,
             endpoint_schema="http://",
             endpoint_path="/api/v1/push",
+        )
+
+        self.grafana_source_provider = GrafanaSourceProvider(
+            charm=self,
+            source_type="mimir",
+            source_port="9009",
         )
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
