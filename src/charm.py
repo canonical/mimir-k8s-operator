@@ -19,6 +19,7 @@ from charms.observability_libs.v1.kubernetes_service_patch import (
     KubernetesServicePatch,
     ServicePort,
 )
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import CharmBase
@@ -90,6 +91,8 @@ class MimirK8SOperatorCharm(CharmBase):
             source_type="mimir",
             source_port="9009",
         )
+
+        self.dashboard_provider = GrafanaDashboardProvider(self)
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
