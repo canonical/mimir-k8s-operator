@@ -14,18 +14,22 @@ from typing import Optional
 
 import yaml
 from charms.grafana_k8s.v0.grafana_source import GrafanaSourceProvider
-from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
+from charms.observability_libs.v0.juju_topology import JujuTopology
+from charms.observability_libs.v1.kubernetes_service_patch import (
+    KubernetesServicePatch,
+    ServicePort,
+)
 from charms.prometheus_k8s.v0.prometheus_remote_write import (
     DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
 )
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
-from deepdiff import DeepDiff  # type: ignore
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
-from ops.pebble import PathError, ProtocolError
+from ops.pebble import Layer, PathError, ProtocolError
 from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
@@ -55,8 +59,30 @@ class MimirK8SOperatorCharm(CharmBase):
         self._stored.set_default(alerts_hash=None)
         self._container = self.unit.get_container(self._name)
 
+        self.topology = JujuTopology.from_charm(self)
+
         self.service_patch = KubernetesServicePatch(
-            self, [(self.app.name, self._http_listen_port)]
+            self, [ServicePort(self._http_listen_port, name=self.app.name)]
+        )
+
+        self.metrics_provider = MetricsEndpointProvider(
+            self,
+            jobs=[
+                {
+                    "static_configs": [
+                        {
+                            "targets": [f"*:{self._http_listen_port}"],
+                            "labels": {
+                                "cluster": self.topology.model_uuid,
+                                "namespace": self.topology.model,
+                                "job": f"{self.topology.model}/mimir",
+                                "pod": self.topology.unit,
+                            },
+                        }
+                    ],
+                    "scrape_interval": "15s",
+                }
+            ],
         )
 
         self.remote_write_provider = PrometheusRemoteWriteProvider(
@@ -123,11 +149,12 @@ class MimirK8SOperatorCharm(CharmBase):
 
         Returns: True if Pebble layer was added, otherwise False.
         """
-        current_layer = self._container.get_plan().to_dict()
+        current_layer = self._container.get_plan()
         new_layer = self._pebble_layer
 
-        if "services" not in current_layer or DeepDiff(
-            current_layer["services"], new_layer["services"], ignore_order=True
+        if (
+            "services" not in current_layer.to_dict()
+            or current_layer.services != new_layer.services
         ):
             self._container.add_layer(self._name, new_layer, combine=True)
             return True
@@ -200,18 +227,20 @@ class MimirK8SOperatorCharm(CharmBase):
 
     @property
     def _pebble_layer(self):
-        return {
-            "summary": "mimir layer",
-            "description": "pebble config layer for mimir",
-            "services": {
-                "mimir": {
-                    "override": "replace",
-                    "summary": "mimir daemon",
-                    "command": f"/bin/mimir --config.file={MIMIR_CONFIG}",
-                    "startup": "enabled",
-                }
-            },
-        }
+        return Layer(
+            {
+                "summary": "mimir layer",
+                "description": "pebble config layer for mimir",
+                "services": {
+                    "mimir": {
+                        "override": "replace",
+                        "summary": "mimir daemon",
+                        "command": f"/bin/mimir --config.file={MIMIR_CONFIG}",
+                        "startup": "enabled",
+                    }
+                },
+            }
+        )
 
     @property
     def _mimir_config(self) -> dict:

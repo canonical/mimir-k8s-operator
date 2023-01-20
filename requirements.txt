@@ -1,5 +1,4 @@
-ops >= 1.5.0
-deepdiff
-lightkube
-lightkube-models
+ops
+lightkube >= 0.11
+lightkube-models >= 1.22.0.4
 parse
