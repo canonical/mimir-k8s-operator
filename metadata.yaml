@@ -40,3 +40,5 @@ provides:
     interface: prometheus_scrape
   receive-remote-write:
     interface: prometheus_remote_write
+  grafana-source:
+    interface: grafana_datasource
