@@ -7,8 +7,9 @@ import logging
 
 import pytest
 import requests
-from helpers import get_unit_address, mimir_endpoint_request, oci_image
+from helpers import get_unit_address, oci_image
 from pytest_operator.plugin import OpsTest
+from workload import Mimir
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,13 @@ PROMETHEUS = "prometheus"
 
 
 @pytest.mark.abort_on_fail
-async def test_deploy_and_relate_charms(ops_test: OpsTest):
+async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
     """Test that Mimir can be related with Prometheus over prometheus_scrape."""
     # Build charm from local source folder
-    mimir_charm = await ops_test.build_charm(".")
-
+    # mimir_charm = await ops_test.build_charm(".")
     await asyncio.gather(
         ops_test.model.deploy(
-            mimir_charm,
+            await mimir_charm,
             resources={"mimir-image": oci_image("./metadata.yaml", "mimir-image")},
             application_name=MIMIR,
             trust=True,
@@ -43,7 +43,9 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest):
 
 
 async def test_metrics_are_available(ops_test):
-    metrics = await mimir_endpoint_request(ops_test, MIMIR, "metrics", 0)
+    address = await get_unit_address(ops_test, MIMIR, 0)
+    mimir = Mimir(host=address)
+    metrics = await mimir.api_request("/metrics")
     assert len(metrics) > 0
 
 
@@ -54,5 +56,8 @@ async def test_query_metrics_from_prometheus(ops_test):
     try:
         response = requests.get(url, params=params)
         assert response.json()["status"] == "success"
+        print(response.json())
+        for result in response.json()["data"]["result"]:
+            assert "1" in result["value"]
     except requests.exceptions.RequestException:
         assert False

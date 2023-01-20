@@ -3,9 +3,7 @@
 
 import logging
 from pathlib import Path
-from urllib.parse import urljoin
 
-import requests
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -14,18 +12,6 @@ logger = logging.getLogger(__name__)
 async def get_unit_address(ops_test, app_name: str, unit_num: int) -> str:
     status = await ops_test.model.get_status()  # noqa: F821
     return status["applications"][app_name]["units"][f"{app_name}/{unit_num}"]["address"]
-
-
-async def mimir_endpoint_request(ops_test, app_name: str, endpoint: str, unit_num: int = 0):
-    address = await get_unit_address(ops_test, app_name, unit_num)
-    url = urljoin(f"http://{address}:9009/", endpoint)
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return response.text
-        return ""
-    except requests.exceptions.RequestException:
-        return ""
 
 
 def oci_image(metadata_file: str, image_name: str) -> str:

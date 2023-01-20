@@ -13,6 +13,7 @@ import socket
 from typing import Optional
 
 import yaml
+from charms.observability_libs.v0.juju_topology import JujuTopology
 from charms.observability_libs.v1.kubernetes_service_patch import (
     KubernetesServicePatch,
     ServicePort,
@@ -65,17 +66,21 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.metrics_provider = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{
-                "targets": [f"*:{self._http_listen_port}"],
-                "labels": {
-                    "cluster": self.topology.model_uuid,
-                    "namespace": self.topology.model,
-                    "job": f"{self.topology.model}/mimir",
-                    "pod": self.topology.unit,
+            jobs=[
+                {
+                    "static_configs": [
+                        {
+                            "targets": [f"*:{self._http_listen_port}"],
+                            "labels": {
+                                "cluster": self.topology.model_uuid,
+                                "namespace": self.topology.model,
+                                "job": f"{self.topology.model}/mimir",
+                                "pod": self.topology.unit,
+                            },
+                        }
+                    ],
+                    "scrape_interval": "15s"
                 }
-                }]}],
-            refresh_event=[
-                self.on.update_status,
             ],
         )
 
