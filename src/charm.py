@@ -57,13 +57,23 @@ class MimirK8SOperatorCharm(CharmBase):
         self._stored.set_default(alerts_hash=None)
         self._container = self.unit.get_container(self._name)
 
+        self.topology = JujuTopology.from_charm(self)
+
         self.service_patch = KubernetesServicePatch(
             self, [ServicePort(self._http_listen_port, name=self.app.name)]
         )
 
         self.metrics_provider = MetricsEndpointProvider(
             self,
-            jobs=[{"static_configs": [{"targets": ["*:9009"]}]}],
+            jobs=[{"static_configs": [{
+                "targets": [f"*:{self._http_listen_port}"],
+                "labels": {
+                    "cluster": self.topology.model_uuid,
+                    "namespace": self.topology.model,
+                    "job": f"{self.topology.model}/mimir",
+                    "pod": self.topology.unit,
+                }
+                }]}],
             refresh_event=[
                 self.on.update_status,
             ],
