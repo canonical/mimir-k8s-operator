@@ -56,7 +56,6 @@ async def test_query_metrics_from_prometheus(ops_test):
     try:
         response = requests.get(url, params=params)
         assert response.json()["status"] == "success"
-        print(response.json())
         for result in response.json()["data"]["result"]:
             assert "1" in result["value"]
     except requests.exceptions.RequestException:

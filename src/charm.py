@@ -79,7 +79,7 @@ class MimirK8SOperatorCharm(CharmBase):
                             },
                         }
                     ],
-                    "scrape_interval": "15s"
+                    "scrape_interval": "15s",
                 }
             ],
         )
