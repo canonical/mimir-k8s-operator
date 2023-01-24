@@ -9,6 +9,7 @@
 import hashlib
 import logging
 import os
+import re
 import socket
 from typing import Optional
 
@@ -27,7 +28,6 @@ from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
 from ops.pebble import Layer, PathError, ProtocolError
-from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
@@ -313,12 +313,9 @@ class MimirK8SOperatorCharm(CharmBase):
         version_output, _ = self._container.exec(["/bin/mimir", "-version"]).wait_output()
         # Output looks like this:
         # Mimir, version 2.4.0 (branch: HEAD, revision: 32137ee)
-        result = search("Mimir, version {} ", version_output)
-
-        if result is None:
-            return result
-
-        return result[0]
+        if result := re.search("[Vv]ersion:?\s*(\S+)", version_output)
+            return result.group(1)
+        return None
 
     @property
     def hostname(self) -> str:
