@@ -19,9 +19,6 @@ from charms.observability_libs.v1.kubernetes_service_patch import (
     KubernetesServicePatch,
     ServicePort,
 )
-from charms.prometheus_k8s.v0.prometheus_remote_write import (
-    DEFAULT_RELATION_NAME as DEFAULT_REMOTE_WRITE_RELATION_NAME,
-)
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import CharmBase
@@ -34,7 +31,7 @@ from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
-RULES_DIR = f"{os.path.join(MIMIR_DIR, 'rules')}"
+RULES_DIR = f"{MIMIR_DIR}/rules"
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +84,8 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.remote_write_provider = PrometheusRemoteWriteProvider(
             charm=self,
-            relation_name=DEFAULT_REMOTE_WRITE_RELATION_NAME,
             endpoint_address=self.hostname,
             endpoint_port=self._http_listen_port,
-            endpoint_schema="http://",
             endpoint_path="/api/v1/push",
         )
 
@@ -217,13 +212,16 @@ class MimirK8SOperatorCharm(CharmBase):
         Args:
             alerts: a dictionary of alert rule files.
         """
-        self._container.make_dir(RULES_DIR)
+        # Without multitenancy, the default is `anonymous`, and the ruler checks under
+        # {RULES_DIR}/<tenant_id>
+        tenant_dir = f"{RULES_DIR}/anonymous"
+        self._container.make_dir(tenant_dir, make_parents=True)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
-            path = os.path.join(RULES_DIR, filename)
+            path = os.path.join(tenant_dir, filename)
             rules = yaml.safe_dump(rules_file)
             self._container.push(path, rules, make_dirs=True)
-            logger.debug("Updated alert rules file %s", filename)
+            logger.debug("Updated alert rules file %s/%s", path, filename)
 
     @property
     def _pebble_layer(self):
@@ -249,17 +247,17 @@ class MimirK8SOperatorCharm(CharmBase):
             "blocks_storage": {
                 "backend": "filesystem",
                 "bucket_store": {
-                    "sync_dir": f"{os.path.join(MIMIR_DIR, 'tsdb-sync')}",
+                    "sync_dir": f"{MIMIR_DIR}/tsdb-sync",
                 },
                 "filesystem": {
-                    "dir": f"{os.path.join(MIMIR_DIR, 'data', 'tsdb')}",
+                    "dir": f"{MIMIR_DIR}/data/tsdb",
                 },
                 "tsdb": {
-                    "dir": f"{os.path.join(MIMIR_DIR, 'tsdb')}",
+                    "dir": f"{MIMIR_DIR}/tsdb",
                 },
             },
             "compactor": {
-                "data_dir": f"{os.path.join(MIMIR_DIR, 'compactor')}",
+                "data_dir": f"{MIMIR_DIR}/compactor",
                 "sharding_ring": {"kvstore": {"store": "memberlist"}},
             },
             "distributor": {
@@ -276,9 +274,9 @@ class MimirK8SOperatorCharm(CharmBase):
                 }
             },
             "ruler_storage": {
-                "backend": "filesystem",
-                "filesystem": {
-                    "dir": RULES_DIR,
+                "backend": "local",
+                "local": {
+                    "directory": RULES_DIR,
                 },
             },
             "server": {
