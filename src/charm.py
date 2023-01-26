@@ -215,7 +215,6 @@ class MimirK8SOperatorCharm(CharmBase):
         # Without multitenancy, the default is `anonymous`, and the ruler checks under
         # {RULES_DIR}/<tenant_id>
         tenant_dir = f"{RULER_STORAGE_DIR}/anonymous"
-        self._container.make_dir(tenant_dir, make_parents=True)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
             path = os.path.join(tenant_dir, filename)
