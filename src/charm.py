@@ -35,8 +35,6 @@ MIMIR_DIR = "/mimir"
 # the configured ruler storage local directory "/mimir/rules"; please set different paths, also
 # ensuring one is not a subdirectory of the other one
 RULES_DIR = f"{MIMIR_DIR}/rules"
-RULER_DATA_DIR = f"{MIMIR_DIR}/ruler_data"
-
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +112,8 @@ class MimirK8SOperatorCharm(CharmBase):
             return
 
         try:
+            # TODO when we stop using `local`, mimir would require an API call or mimirtool to
+            # reload any newly pushed rules.
             self._set_alerts()
             restart = any(
                 [
@@ -268,9 +268,6 @@ class MimirK8SOperatorCharm(CharmBase):
                     "replication_factor": 1,
                 }
             },
-            # "ruler": {
-            #     "rule_path": RULER_DATA_DIR,
-            # },
             "ruler_storage": {
                 "backend": "local",
                 "local": {

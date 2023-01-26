@@ -47,6 +47,8 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
 
 @pytest.mark.abort_on_fail
 async def test_rules_are_loaded(ops_test):
+    await asyncio.sleep(15)  # Give mimir a chance to reload the newly pushed rules
+
     address = await get_address(ops_test, mimir.name, 0)
     client = Mimir(host=address)
 
