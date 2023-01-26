@@ -50,5 +50,7 @@ async def test_rules_and_alerts_are_available(ops_test):
     client = Mimir(host=address)
     alerts = await client.api_request("/prometheus/api/v1/alerts")
     rules = await client.api_request("/prometheus/api/v1/rules")
+    groups = await client.api_request("/ruler/rule_groups")
     logger.info("alerts: %s", alerts)
     logger.info("rules: %s", rules)
+    logger.info("groups: %s", groups)
