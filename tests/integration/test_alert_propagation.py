@@ -47,10 +47,14 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
 
 @pytest.mark.abort_on_fail
 async def test_rules_are_loaded(ops_test):
-    await asyncio.sleep(15)  # Give mimir a chance to reload the newly pushed rules
-
     address = await get_address(ops_test, mimir.name, 0)
     client = Mimir(host=address)
+
+    # Get rule change poll interval (default is '1m0s')
+    config = yaml.safe_load(await client.api_request("/config"))
+    poll_interval = pytimeparse.parse(config["ruler"]["poll_interval"])
+    logger.info("Waiting for mimir's rule poll interval to elapse...")
+    await asyncio.sleep(poll_interval)
 
     rules = json.loads(await client.api_request("/prometheus/api/v1/rules"))
     # Response looks like this:

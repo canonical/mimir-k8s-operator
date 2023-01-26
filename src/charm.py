@@ -113,7 +113,7 @@ class MimirK8SOperatorCharm(CharmBase):
 
         try:
             # TODO when we stop using `local`, mimir would require an API call or mimirtool to
-            # reload any newly pushed rules.
+            #  reload any newly pushed rules.
             self._set_alerts()
             restart = any(
                 [
