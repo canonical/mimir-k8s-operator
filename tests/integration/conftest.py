@@ -54,3 +54,10 @@ async def mimir_charm(ops_test: OpsTest):
     """Mimir charm used for integration testing."""
     charm = await ops_test.build_charm(".")
     return charm
+
+
+@pytest.fixture(scope="module", autouse=True)
+async def model_config(ops_test: OpsTest):
+    await ops_test.model.set_config(
+        {"logging-config": "<root>=WARNING; unit=DEBUG", "update-status-hook-interval": "60m"}
+    )

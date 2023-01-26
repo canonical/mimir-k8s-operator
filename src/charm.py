@@ -6,9 +6,9 @@
 
 """A Juju Charmed Operator for Mimir."""
 
-import hashlib
 import logging
 import os
+import re
 import socket
 from typing import Optional
 
@@ -22,25 +22,21 @@ from charms.observability_libs.v1.kubernetes_service_patch import (
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import CharmBase
-from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
 from ops.pebble import Layer, PathError, ProtocolError
-from parse import search  # type: ignore
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
+
+# Ruler dirs cannot overlap, otherwise mimir complains:
+# error validating config: the configured ruler data directory "/mimir/rules" cannot overlap with
+# the configured ruler storage local directory "/mimir/rules"; please set different paths, also
+# ensuring one is not a subdirectory of the other one
 RULES_DIR = f"{MIMIR_DIR}/rules"
 
 logger = logging.getLogger(__name__)
-
-
-def sha256(hashable) -> str:
-    """Use instead of the builtin hash() for repeatable values."""
-    if isinstance(hashable, str):
-        hashable = hashable.encode("utf-8")
-    return hashlib.sha256(hashable).hexdigest()
 
 
 class MimirK8SOperatorCharm(CharmBase):
@@ -49,11 +45,9 @@ class MimirK8SOperatorCharm(CharmBase):
     _name = "mimir"
     _http_listen_port = 9009
     _instance_addr = "127.0.0.1"
-    _stored = StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
-        self._stored.set_default(alerts_hash=None)
         self._container = self.unit.get_container(self._name)
 
         self.topology = JujuTopology.from_charm(self)
@@ -88,6 +82,8 @@ class MimirK8SOperatorCharm(CharmBase):
             endpoint_port=self._http_listen_port,
             endpoint_path="/api/v1/push",
         )
+        # TODO add custom event to remote-write
+        self.framework.observe(self.remote_write_provider.on.alert_rules_changed, self._configure)
 
         self.grafana_source_provider = GrafanaSourceProvider(
             charm=self,
@@ -97,6 +93,7 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.stop, self._on_stop)
 
     def _on_mimir_pebble_ready(self, event):
         self._set_mimir_version()
@@ -105,15 +102,21 @@ class MimirK8SOperatorCharm(CharmBase):
     def _on_config_changed(self, event):
         self._configure(event)
 
+    def _on_stop(self, _):
+        # Clear the workload version in case something's wrong after an upgrade.
+        self.unit.set_workload_version("")
+
     def _configure(self, event):
         if not self._container.can_connect():
             self.unit.status = WaitingStatus("Waiting for Pebble ready")
             return
 
         try:
+            # TODO when we stop using `local`, mimir would require an API call or mimirtool to
+            #  reload any newly pushed rules.
+            self._set_alerts()
             restart = any(
                 [
-                    self._set_alerts(),
                     self._set_mimir_config(),
                     self._set_pebble_layer(),
                 ]
@@ -177,20 +180,13 @@ class MimirK8SOperatorCharm(CharmBase):
             logger.error("Failed to push updated config file: %s", e)
             raise BlockedStatusError(str(e))
 
-    def _set_alerts(self) -> bool:
-        """Create alert rule files for all Mimir consumers.
+    def _set_alerts(self) -> None:
+        """(Re-)create alert rule files for all Mimir consumers.
 
         Returns: True if alerts rules have changed, otherwise False.
         Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
             are raised by container.remove_path
         """
-        remote_write_alerts = self.remote_write_provider.alerts()
-        alerts_hash = sha256(str(remote_write_alerts))
-        alert_rules_changed = alerts_hash != self._stored.alerts_hash
-
-        # Pushing files every time for situations such as cluster restart:
-        # Relation data and stored state match, but files haven't been written yet.
-
         try:
             self._container.remove_path(RULES_DIR, recursive=True)
         except PebbleError as e:
@@ -203,9 +199,6 @@ class MimirK8SOperatorCharm(CharmBase):
             logger.error("Failed to push updated alert files: %s", e)
             raise BlockedStatusError("Failed to push updated alert files; see debug logs")
 
-        self._stored.alerts_hash = alerts_hash
-        return alert_rules_changed
-
     def _push_alert_rules(self, alerts):
         """Push alert rules from a rules file to the mimir container.
 
@@ -215,6 +208,8 @@ class MimirK8SOperatorCharm(CharmBase):
         # Without multitenancy, the default is `anonymous`, and the ruler checks under
         # {RULES_DIR}/<tenant_id>
         tenant_dir = f"{RULES_DIR}/anonymous"
+        # Need to `make_dir` even though we have `make_dirs=True` below
+        # https://github.com/canonical/operator/issues/898
         self._container.make_dir(tenant_dir, make_parents=True)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
@@ -313,12 +308,9 @@ class MimirK8SOperatorCharm(CharmBase):
         version_output, _ = self._container.exec(["/bin/mimir", "-version"]).wait_output()
         # Output looks like this:
         # Mimir, version 2.4.0 (branch: HEAD, revision: 32137ee)
-        result = search("Mimir, version {} ", version_output)
-
-        if result is None:
-            return result
-
-        return result[0]
+        if result := re.search(r"[Vv]ersion:?\s*(\S+)", version_output):
+            return result.group(1)
+        return None
 
     @property
     def hostname(self) -> str:

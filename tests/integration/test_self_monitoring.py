@@ -7,7 +7,7 @@ import logging
 
 import pytest
 import requests
-from helpers import get_unit_address, oci_image
+from helpers import get_address, oci_image
 from pytest_operator.plugin import OpsTest
 from workload import Mimir
 
@@ -24,7 +24,7 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
     # mimir_charm = await ops_test.build_charm(".")
     await asyncio.gather(
         ops_test.model.deploy(
-            await mimir_charm,
+            mimir_charm,
             resources={"mimir-image": oci_image("./metadata.yaml", "mimir-image")},
             application_name=MIMIR,
             trust=True,
@@ -43,14 +43,14 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
 
 
 async def test_metrics_are_available(ops_test):
-    address = await get_unit_address(ops_test, MIMIR, 0)
+    address = await get_address(ops_test, MIMIR, 0)
     mimir = Mimir(host=address)
     metrics = await mimir.api_request("/metrics")
     assert len(metrics) > 0
 
 
 async def test_query_metrics_from_prometheus(ops_test):
-    address = await get_unit_address(ops_test, PROMETHEUS, 0)
+    address = await get_address(ops_test, PROMETHEUS, 0)
     url = f"http://{address}:9090/api/v1/query"
     params = {"query": f"up{{juju_application='{MIMIR}'}}"}
     try:
