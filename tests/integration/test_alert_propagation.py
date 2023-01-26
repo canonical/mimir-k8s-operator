@@ -10,6 +10,9 @@ import pytest
 from helpers import get_address, oci_image
 from pytest_operator.plugin import OpsTest
 from workload import Mimir
+import json
+import yaml
+import pytimeparse
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +45,40 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
     await ops_test.model.wait_for_idle(status="active")
 
 
-# TODO wait until target is there
-
-
-async def test_rules_and_alerts_are_available(ops_test):
+@pytest.mark.abort_on_fail
+async def test_rules_are_loaded(ops_test):
     address = await get_address(ops_test, mimir.name, 0)
     client = Mimir(host=address)
-    alerts = await client.api_request("/prometheus/api/v1/alerts")
-    rules = await client.api_request("/prometheus/api/v1/rules")
-    groups = await client.api_request("/ruler/rule_groups")
-    logger.info("alerts: %s", alerts)
-    logger.info("rules: %s", rules)
-    logger.info("groups: %s", groups)
+
+    rules = json.loads(await client.api_request("/prometheus/api/v1/rules"))
+    # Response looks like this:
+    # {"status":"success","data":{"groups":[{"name":"test-alert-propagation-...
+    assert len(rules["data"]["groups"]) > 0
+
+    groups = yaml.safe_load(await client.api_request("/ruler/rule_groups"))
+    # Response looks like this:
+    # anonymous:
+    #     juju_test-alert-propagation-nxl2_0badd9d0_avalanche-k8s.rules:
+    #         - name: test-alert-propagation-...
+    #           rules:
+    #             - alert: AlwaysFiringDueToNumericValue
+    #               expr: avalanche_metric_mmmmm_0_0...
+    assert set(groups["anonymous"]) > set()
+
+
+@pytest.mark.abort_on_fail
+async def test_rules_are_loaded(ops_test):
+    address = await get_address(ops_test, mimir.name, 0)
+    client = Mimir(host=address)
+
+    # Get evaluation interval (default is '1m0s')
+    config = yaml.safe_load(await client.api_request("/config"))
+    eval_interval = pytimeparse.parse(config["ruler"]["evaluation_interval"])
+    logger.info("Waiting for mimir's rule evaluation interval to elapse...")
+    await asyncio.sleep(eval_interval + 10)
+
+    alerts = json.loads(await client.api_request("/prometheus/api/v1/alerts"))
+    # Response looks like this (after a while; at the very beginning the list is empty):
+    # {"status":"success","data":{"alerts":
+    # [{"labels":{"alertname":"AlwaysFiringDueToAbsentMetric","job":"non_existing_job",...
+    assert len(alerts) > 0

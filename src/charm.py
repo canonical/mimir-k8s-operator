@@ -94,6 +94,8 @@ class MimirK8SOperatorCharm(CharmBase):
             endpoint_port=self._http_listen_port,
             endpoint_path="/api/v1/push",
         )
+        # TODO add custom event to remote-write
+        self.framework.observe(self.on.receive_remote_write_relation_changed, self._configure)
 
         self.grafana_source_provider = GrafanaSourceProvider(
             charm=self,
@@ -215,6 +217,9 @@ class MimirK8SOperatorCharm(CharmBase):
         # Without multitenancy, the default is `anonymous`, and the ruler checks under
         # {RULES_DIR}/<tenant_id>
         tenant_dir = f"{RULER_STORAGE_DIR}/anonymous"
+        # Need to `make_dir` even though we have `make_dirs=True` below
+        # https://github.com/canonical/operator/issues/898
+        self._container.make_dir(tenant_dir, make_parents=True)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
             path = os.path.join(tenant_dir, filename)
