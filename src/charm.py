@@ -83,7 +83,7 @@ class MimirK8SOperatorCharm(CharmBase):
             endpoint_path="/api/v1/push",
         )
         # TODO add custom event to remote-write
-        self.framework.observe(self.on.receive_remote_write_relation_changed, self._configure)
+        self.framework.observe(self.remote_write_provider.on.alert_rules_changed, self._configure)
 
         self.grafana_source_provider = GrafanaSourceProvider(
             charm=self,
