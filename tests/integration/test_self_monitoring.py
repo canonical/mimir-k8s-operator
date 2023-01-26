@@ -24,7 +24,7 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
     # mimir_charm = await ops_test.build_charm(".")
     await asyncio.gather(
         ops_test.model.deploy(
-            await mimir_charm,
+            mimir_charm,
             resources={"mimir-image": oci_image("./metadata.yaml", "mimir-image")},
             application_name=MIMIR,
             trust=True,
