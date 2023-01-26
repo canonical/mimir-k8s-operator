@@ -6,7 +6,6 @@
 
 """A Juju Charmed Operator for Mimir."""
 
-import hashlib
 import logging
 import os
 import re
@@ -35,20 +34,11 @@ MIMIR_DIR = "/mimir"
 # error validating config: the configured ruler data directory "/mimir/rules" cannot overlap with
 # the configured ruler storage local directory "/mimir/rules"; please set different paths, also
 # ensuring one is not a subdirectory of the other one
-RULER_STORAGE_DIR = f"{MIMIR_DIR}/ruler_storage"
+RULES_DIR = f"{MIMIR_DIR}/rules"
 RULER_DATA_DIR = f"{MIMIR_DIR}/ruler_data"
 
-# Not storing under `/mimir` because that path is persistent storage (see metadata.yaml)
-ALERTS_HASH_PATH = "/etc/mimir/alerts.sha256"
 
 logger = logging.getLogger(__name__)
-
-
-def sha256(hashable) -> str:
-    """Use instead of the builtin hash() for repeatable values."""
-    if isinstance(hashable, str):
-        hashable = hashable.encode("utf-8")
-    return hashlib.sha256(hashable).hexdigest()
 
 
 class MimirK8SOperatorCharm(CharmBase):
@@ -124,9 +114,9 @@ class MimirK8SOperatorCharm(CharmBase):
             return
 
         try:
+            self._set_alerts()
             restart = any(
                 [
-                    self._set_alerts(),
                     self._set_mimir_config(),
                     self._set_pebble_layer(),
                 ]
@@ -190,23 +180,24 @@ class MimirK8SOperatorCharm(CharmBase):
             logger.error("Failed to push updated config file: %s", e)
             raise BlockedStatusError(str(e))
 
-    def _set_alerts(self) -> bool:
-        """Create alert rule files for all Mimir consumers.
+    def _set_alerts(self) -> None:
+        """(Re-)create alert rule files for all Mimir consumers.
 
         Returns: True if alerts rules have changed, otherwise False.
         Raises: BlockedStatusError exception if PebbleError, ProtocolError, PathError exceptions
             are raised by container.remove_path
         """
-        remote_write_alerts = self.remote_write_provider.alerts()
-        alerts_hash = sha256(str(remote_write_alerts))
-        alert_rules_changed = alerts_hash != self._pull(ALERTS_HASH_PATH)
+        try:
+            self._container.remove_path(RULES_DIR, recursive=True)
+        except PebbleError as e:
+            logger.error("Failed to remove alerts directory: %s", e)
+            raise BlockedStatusError("Failed to remove alerts directory; see debug logs")
 
-        if alert_rules_changed:
-            self._container.remove_path(RULER_STORAGE_DIR, recursive=True)
-            self._push_alert_rules(remote_write_alerts)
-            self._push(ALERTS_HASH_PATH, alerts_hash)
-
-        return alert_rules_changed
+        try:
+            self._push_alert_rules(self.remote_write_provider.alerts())
+        except (ProtocolError, PathError) as e:
+            logger.error("Failed to push updated alert files: %s", e)
+            raise BlockedStatusError("Failed to push updated alert files; see debug logs")
 
     def _push_alert_rules(self, alerts):
         """Push alert rules from a rules file to the mimir container.
@@ -216,7 +207,7 @@ class MimirK8SOperatorCharm(CharmBase):
         """
         # Without multitenancy, the default is `anonymous`, and the ruler checks under
         # {RULES_DIR}/<tenant_id>
-        tenant_dir = f"{RULER_STORAGE_DIR}/anonymous"
+        tenant_dir = f"{RULES_DIR}/anonymous"
         # Need to `make_dir` even though we have `make_dirs=True` below
         # https://github.com/canonical/operator/issues/898
         self._container.make_dir(tenant_dir, make_parents=True)
@@ -224,7 +215,7 @@ class MimirK8SOperatorCharm(CharmBase):
             filename = f"juju_{topology_identifier}.rules"
             path = os.path.join(tenant_dir, filename)
             rules = yaml.safe_dump(rules_file)
-            self._push(path, rules)
+            self._container.push(path, rules, make_dirs=True)
             logger.debug("Updated alert rules file %s/%s", path, filename)
 
     @property
@@ -283,7 +274,7 @@ class MimirK8SOperatorCharm(CharmBase):
             "ruler_storage": {
                 "backend": "local",
                 "local": {
-                    "directory": RULER_STORAGE_DIR,
+                    "directory": RULES_DIR,
                 },
             },
             "server": {
@@ -328,22 +319,6 @@ class MimirK8SOperatorCharm(CharmBase):
     def hostname(self) -> str:
         """Unit's hostname."""
         return socket.getfqdn()
-
-    def _pull(self, path) -> Optional[str]:
-        """Pull file from container (without raising pebble errors).
-
-        Returns:
-            File contents if exists; None otherwise.
-        """
-        try:
-            return self._container.pull(path, encoding="utf-8").read()
-        except (FileNotFoundError, PebbleError):
-            # Drop FileNotFoundError https://github.com/canonical/operator/issues/896
-            return None
-
-    def _push(self, path, contents):
-        """Push file to container, creating subdirs as necessary."""
-        self._container.push(path, contents, make_dirs=True, encoding="utf-8")
 
 
 class BlockedStatusError(Exception):
