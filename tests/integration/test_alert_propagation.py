@@ -3,16 +3,16 @@
 # See LICENSE file for licensing details.
 
 import asyncio
+import json
 import logging
 from types import SimpleNamespace
 
 import pytest
+import pytimeparse
+import yaml
 from helpers import get_address, oci_image
 from pytest_operator.plugin import OpsTest
 from workload import Mimir
-import json
-import yaml
-import pytimeparse
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ async def test_rules_are_loaded(ops_test):
 
 
 @pytest.mark.abort_on_fail
-async def test_rules_are_loaded(ops_test):
+async def test_alerts_are_fired(ops_test):
     address = await get_address(ops_test, mimir.name, 0)
     client = Mimir(host=address)
 
