@@ -9,3 +9,12 @@ bases:
     run-on:
     - name: ubuntu
       channel: "22.04"
+parts:
+  cos-tool:
+    plugin: dump
+    source: .
+    build-packages:
+      - curl
+    override-pull: |
+      curl -L -O https://github.com/canonical/cos-tool/releases/latest/download/cos-tool-${CRAFT_TARGET_ARCH}
+      chmod +x cos-tool-*

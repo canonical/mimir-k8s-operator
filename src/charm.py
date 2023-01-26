@@ -23,7 +23,6 @@ from charms.observability_libs.v1.kubernetes_service_patch import (
 from charms.prometheus_k8s.v0.prometheus_remote_write import PrometheusRemoteWriteProvider
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import CharmBase
-from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.pebble import Error as PebbleError
@@ -31,7 +30,16 @@ from ops.pebble import Layer, PathError, ProtocolError
 
 MIMIR_CONFIG = "/etc/mimir/mimir-config.yaml"
 MIMIR_DIR = "/mimir"
-RULES_DIR = f"{MIMIR_DIR}/rules"
+
+# Ruler dirs cannot overlap, otherwise mimir complains:
+# error validating config: the configured ruler data directory "/mimir/rules" cannot overlap with
+# the configured ruler storage local directory "/mimir/rules"; please set different paths, also
+# ensuring one is not a subdirectory of the other one
+RULER_STORAGE_DIR = f"{MIMIR_DIR}/ruler_storage"
+RULER_DATA_DIR = f"{MIMIR_DIR}/ruler_data"
+
+# Not storing under `/mimir` because that path is persistent storage (see metadata.yaml)
+ALERTS_HASH_PATH = "/etc/mimir/alerts.sha256"
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +57,9 @@ class MimirK8SOperatorCharm(CharmBase):
     _name = "mimir"
     _http_listen_port = 9009
     _instance_addr = "127.0.0.1"
-    _stored = StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
-        self._stored.set_default(alerts_hash=None)
         self._container = self.unit.get_container(self._name)
 
         self.topology = JujuTopology.from_charm(self)
@@ -97,6 +103,7 @@ class MimirK8SOperatorCharm(CharmBase):
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.stop, self._on_stop)
 
     def _on_mimir_pebble_ready(self, event):
         self._set_mimir_version()
@@ -104,6 +111,10 @@ class MimirK8SOperatorCharm(CharmBase):
 
     def _on_config_changed(self, event):
         self._configure(event)
+
+    def _on_stop(self, _):
+        # Clear the workload version in case something's wrong after an upgrade.
+        self.unit.set_workload_version("")
 
     def _configure(self, event):
         if not self._container.can_connect():
@@ -186,24 +197,13 @@ class MimirK8SOperatorCharm(CharmBase):
         """
         remote_write_alerts = self.remote_write_provider.alerts()
         alerts_hash = sha256(str(remote_write_alerts))
-        alert_rules_changed = alerts_hash != self._stored.alerts_hash
+        alert_rules_changed = alerts_hash != self._pull(ALERTS_HASH_PATH)
 
-        # Pushing files every time for situations such as cluster restart:
-        # Relation data and stored state match, but files haven't been written yet.
+        if alert_rules_changed:
+            self._container.remove_path(RULER_STORAGE_DIR, recursive=True)
+            self._push_alert_rules(remote_write_alerts)
+            self._push(ALERTS_HASH_PATH, alerts_hash)
 
-        try:
-            self._container.remove_path(RULES_DIR, recursive=True)
-        except PebbleError as e:
-            logger.error("Failed to remove alerts directory: %s", e)
-            raise BlockedStatusError("Failed to remove alerts directory; see debug logs")
-
-        try:
-            self._push_alert_rules(self.remote_write_provider.alerts())
-        except (ProtocolError, PathError) as e:
-            logger.error("Failed to push updated alert files: %s", e)
-            raise BlockedStatusError("Failed to push updated alert files; see debug logs")
-
-        self._stored.alerts_hash = alerts_hash
         return alert_rules_changed
 
     def _push_alert_rules(self, alerts):
@@ -214,13 +214,13 @@ class MimirK8SOperatorCharm(CharmBase):
         """
         # Without multitenancy, the default is `anonymous`, and the ruler checks under
         # {RULES_DIR}/<tenant_id>
-        tenant_dir = f"{RULES_DIR}/anonymous"
+        tenant_dir = f"{RULER_STORAGE_DIR}/anonymous"
         self._container.make_dir(tenant_dir, make_parents=True)
         for topology_identifier, rules_file in alerts.items():
             filename = f"juju_{topology_identifier}.rules"
             path = os.path.join(tenant_dir, filename)
             rules = yaml.safe_dump(rules_file)
-            self._container.push(path, rules, make_dirs=True)
+            self._push(path, rules)
             logger.debug("Updated alert rules file %s/%s", path, filename)
 
     @property
@@ -273,10 +273,13 @@ class MimirK8SOperatorCharm(CharmBase):
                     "replication_factor": 1,
                 }
             },
+            # "ruler": {
+            #     "rule_path": RULER_DATA_DIR,
+            # },
             "ruler_storage": {
                 "backend": "local",
                 "local": {
-                    "directory": RULES_DIR,
+                    "directory": RULER_STORAGE_DIR,
                 },
             },
             "server": {
@@ -313,7 +316,7 @@ class MimirK8SOperatorCharm(CharmBase):
         version_output, _ = self._container.exec(["/bin/mimir", "-version"]).wait_output()
         # Output looks like this:
         # Mimir, version 2.4.0 (branch: HEAD, revision: 32137ee)
-        if result := re.search("[Vv]ersion:?\s*(\S+)", version_output)
+        if result := re.search(r"[Vv]ersion:?\s*(\S+)", version_output):
             return result.group(1)
         return None
 
@@ -321,6 +324,22 @@ class MimirK8SOperatorCharm(CharmBase):
     def hostname(self) -> str:
         """Unit's hostname."""
         return socket.getfqdn()
+
+    def _pull(self, path) -> Optional[str]:
+        """Pull file from container (without raising pebble errors).
+
+        Returns:
+            File contents if exists; None otherwise.
+        """
+        try:
+            return self._container.pull(path, encoding="utf-8").read()
+        except (FileNotFoundError, PebbleError):
+            # Drop FileNotFoundError https://github.com/canonical/operator/issues/896
+            return None
+
+    def _push(self, path, contents):
+        """Push file to container, creating subdirs as necessary."""
+        self._container.push(path, contents, make_dirs=True, encoding="utf-8")
 
 
 class BlockedStatusError(Exception):
