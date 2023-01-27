@@ -13,6 +13,7 @@ import socket
 from typing import Optional
 
 import yaml
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.grafana_k8s.v0.grafana_source import GrafanaSourceProvider
 from charms.observability_libs.v0.juju_topology import JujuTopology
 from charms.observability_libs.v1.kubernetes_service_patch import (
@@ -90,6 +91,8 @@ class MimirK8SOperatorCharm(CharmBase):
             source_type="mimir",
             source_port="9009",
         )
+
+        self.dashboard_provider = GrafanaDashboardProvider(self)
 
         self.framework.observe(self.on.mimir_pebble_ready, self._on_mimir_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)

@@ -38,6 +38,8 @@ resources:
 provides:
   metrics-endpoint:
     interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
   receive-remote-write:
     interface: prometheus_remote_write
   grafana-source:
