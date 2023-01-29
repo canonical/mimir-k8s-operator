@@ -28,11 +28,11 @@ class TestCharm(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.harness.begin()
 
-    @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
+    @patch("charm.MimirK8SOperatorCharm._running_mimir_config", new_callable=Mock)
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
-    def test_pebble_ready_and_config_ok(self, mock_set_alerts, mock_current_mimir_config):
+    def test_pebble_ready_and_config_ok(self, mock_set_alerts, mock_running_mimir_config):
         mock_set_alerts.return_value = True
-        mock_current_mimir_config.return_value = {}
+        mock_running_mimir_config.return_value = {}
         expected_plan = {
             "services": {
                 "mimir": {
@@ -68,13 +68,13 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(self.harness.model.unit.status, WaitingStatus("Waiting for Pebble ready"))
 
     @patch.object(Container, "push")
-    @patch("charm.MimirK8SOperatorCharm._current_mimir_config", new_callable=PropertyMock)
+    @patch("charm.MimirK8SOperatorCharm._running_mimir_config", new_callable=Mock)
     @patch("charm.MimirK8SOperatorCharm._set_alerts", new_callable=Mock)
     def test_mimir_pebble_ready_cannot_push_config(
-        self, mock_set_alerts, mock_current_mimir_config, mock_push
+        self, mock_set_alerts, mock_running_mimir_config, mock_push
     ):
         mock_set_alerts.return_value = True
-        mock_current_mimir_config.return_value = {}
+        mock_running_mimir_config.return_value = {}
         mock_push.side_effect = ProtocolError("Message")
 
         self.harness.container_pebble_ready("mimir")

@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 import logging
+from typing import Dict, Literal, Optional
 from urllib.parse import urljoin
 
 import aiohttp
@@ -72,9 +73,18 @@ class Mimir:
                 result = await response.text()
                 return result if response.status == 200 else ""
 
-    async def api_request(self, endpoint: str):
+    async def api_request(
+        self,
+        endpoint: str,
+        response_type: Optional[Literal["json"]] = None,
+        params: Optional[Dict] = {},
+    ):
         url = urljoin(self.base_url, endpoint)
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                result = await response.text()
-                return result if response.status == 200 else ""
+            async with session.request("GET", url, params=params) as response:
+                if response_type == "json":
+                    result = await response.json()
+                    return result if response.status == 200 else ""
+                else:
+                    result = await response.text()
+                    return result if response.status == 200 else ""

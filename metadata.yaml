@@ -44,3 +44,7 @@ provides:
     interface: prometheus_remote_write
   grafana-source:
     interface: grafana_datasource
+
+requires:
+  s3:
+    interface: s3
