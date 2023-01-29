@@ -43,7 +43,9 @@ async def test_deploy_and_relate_charms(ops_test: OpsTest, mimir_charm):
         ops_test.model.add_relation(f"{mimir.name}:receive-remote-write", tester.name),
         ops_test.model.add_relation(f"{mimir.name}:s3", storage.name),
     )
-    await ops_test.model.wait_for_idle(status="active")
+    await ops_test.model.wait_for_idle(
+        status="active", apps=[mimir.name, tester.name, storage.name]
+    )
 
 
 @pytest.mark.abort_on_fail
@@ -51,7 +53,8 @@ async def test_object_storage_propagates(ops_test):
     address = await get_address(ops_test, mimir.name, 0)
     client = Mimir(host=address)
 
-    logger.info("Waiting for avalanche to push." "")
+    logger.info("Waiting for avalanche to push.")
+    await asyncio.sleep(75)
     config = yaml.safe_load(await client.api_request("/config"))
     assert "s3" in config["common"]["storage"]["backend"]
 
