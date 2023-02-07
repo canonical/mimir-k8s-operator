@@ -1,5 +1,13 @@
 # Contributing
 
+![GitHub License](https://img.shields.io/github/license/canonical/mimir-k8s-operator)
+![GitHub Commit Activity](https://img.shields.io/github/commit-activity/y/canonical/mimir-k8s-operator)
+![GitHub Lines of Code](https://img.shields.io/tokei/lines/github/canonical/mimir-k8s-operator)
+![GitHub Issues](https://img.shields.io/github/issues/canonical/mimir-k8s-operator)
+![GitHub PRs](https://img.shields.io/github/issues-pr/canonical/mimir-k8s-operator)
+![GitHub Contributors](https://img.shields.io/github/contributors/canonical/mimir-k8s-operator)
+![GitHub Watchers](https://img.shields.io/github/watchers/canonical/mimir-k8s-operator?style=social)
+
 To make contributions to this charm, you'll need a working [development setup](https://juju.is/docs/sdk/dev-setup).
 
 You can use the environments created by `tox` for development:
