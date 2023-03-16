@@ -314,7 +314,7 @@ class MimirK8SOperatorCharm(CharmBase):
             raise BlockedStatusError("Failed to remove alerts directory; see debug logs")
 
         try:
-            self._push_alert_rules(self.remote_write_provider.alerts())
+            self._push_alert_rules(self.remote_write_provider.alerts)
         except (ProtocolError, PathError) as e:
             logger.error("Failed to push updated alert files: %s", e)
             raise BlockedStatusError("Failed to push updated alert files; see debug logs")
