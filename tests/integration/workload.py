@@ -85,6 +85,5 @@ class Mimir:
                 if response_type == "json":
                     result = await response.json()
                     return result if response.status == 200 else ""
-                else:
-                    result = await response.text()
-                    return result if response.status == 200 else ""
+                result = await response.text()
+                return result if response.status == 200 else ""

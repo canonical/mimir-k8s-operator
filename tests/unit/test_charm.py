@@ -7,11 +7,10 @@ import unittest
 from unittest.mock import Mock, PropertyMock, patch
 
 import ops.testing
+from charm import BlockedStatusError, MimirK8SOperatorCharm
 from ops.model import ActiveStatus, BlockedStatus, Container, WaitingStatus
 from ops.pebble import ProtocolError
 from ops.testing import Harness
-
-from charm import BlockedStatusError, MimirK8SOperatorCharm
 
 ops.testing.SIMULATE_CAN_CONNECT = True
 
