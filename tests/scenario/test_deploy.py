@@ -6,7 +6,7 @@ from unittest.mock import Mock, PropertyMock
 import pytest
 from charm import BlockedStatusError, MimirK8SOperatorCharm
 from charms.harness_extensions.v0.evt_sequences import Event, Scenario
-from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
+from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from ops.model import BlockedStatus, Container, WaitingStatus
 from ops.pebble import ProtocolError
 
