@@ -1,3 +1,10 @@
+> ### ℹ️ This project has moved
+>
+> This project is archived in favor of the bundle available at https://github.com/canonical/mimir-bundle/.
+> Please recreate your Mimir deployment using the linked bundle.
+
+---
+
 # Mimir Charmed Operator for K8s
 
 [![CharmHub Badge](https://charmhub.io/mimir-k8s/badge.svg)](https://charmhub.io/mimir-k8s)
